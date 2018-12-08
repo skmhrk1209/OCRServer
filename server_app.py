@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import base64
+import json
 import image as img
 from attrdict import AttrDict
 from model import Model
@@ -49,33 +50,28 @@ def predict(base64_encoded):
     image = cv2.imdecode(np.frombuffer(base64.b64decode(base64_encoded), dtype=np.uint8), cv2.IMREAD_COLOR)
     image = image.reshape(256, 256, 3).astype(np.float32) / 255.0
 
-    predict_results = classifier.predict(
+    predict_result = next(classifier.predict(
         input_fn=tf.estimator.inputs.numpy_input_fn(
             x={"image": image[np.newaxis, :, :, :]},
             batch_size=1,
             num_epochs=1,
             shuffle=False
         )
-    )
+    ))
 
     class_ids = {}
+    class_ids.update({chr(j): i for i, j in enumerate(range(ord("0"), ord("9") + 1), 0)})
+    class_ids.update({chr(j): i for i, j in enumerate(range(ord("A"), ord("Z") + 1), class_ids["9"] + 1)})
+    class_ids.update({chr(j): i for i, j in enumerate(range(ord("a"), ord("z") + 1), class_ids["Z"] + 1)}),
+    class_ids.update({"": max(class_ids.values()) + 1})
 
-    for i in range(ord("0"), ord("z") + 1):
+    class_chars = dict(map(lambda key_value: key_value[::-1], class_ids.items()))
 
-        if ord("0") <= i <= ord("9"):
-            class_ids[chr(i)] = i - ord("0")
-        elif ord("A") <= i <= ord("Z"):
-            class_ids[chr(i)] = i - ord("A") + class_ids["9"] + 1
-        elif ord("a") <= i <= ord("z"):
-            class_ids[chr(i)] = i - ord("a") + class_ids["Z"] + 1
+    predictions = ["".join([class_chars[class_id] for class_id in class_ids]) for class_ids in predict_result["predictions"]]
 
-    class_ids[""] = max(class_ids.values()) + 1
+    bounding_boxes = [[
+        img.search_bounding_box(img.scale(attention_map, attention_map.min(), attention_map.max(), 0.0, 1.0), 0.5)
+        for class_id, attention_map in zip(class_ids, attention_maps) if class_chars[class_id]
+    ] for class_ids, attention_maps in zip(predict_result["predictions"], predict_result["attention_maps"])]
 
-    chars = {class_id: char for char, class_id in class_ids.items()}
-
-    predictions = "_".join([
-        "".join([chars[class_id] for class_id in class_ids])
-        for class_ids in next(predict_results)["predictions"]
-    ])
-
-    return predictions
+    return json.dumps(dict(predictions=predictions, bounding_boxes=bounding_boxes))
