@@ -46,12 +46,12 @@ def predict(base64_encoded):
         model_dir="multi_synth_acnn_model"
     )
 
-    #image = np.frombuffer(base64.decode(base64_encoded), dtype=np.uint8)
-    image = cv2.imread(base64_encoded)
+    image = cv2.imdecode(np.frombuffer(base64.b64decode(base64_encoded), dtype=np.uint8), cv2.IMREAD_COLOR)
+    image = image.reshape(256, 256, 3).astype(np.float32) / 255.0
 
     predict_results = classifier.predict(
         input_fn=tf.estimator.inputs.numpy_input_fn(
-            x={"image": image[np.newaxis, :, :, :].astype(np.float32) / 255.0},
+            x={"image": image[np.newaxis, :, :, :]},
             batch_size=1,
             num_epochs=1,
             shuffle=False
@@ -73,9 +73,9 @@ def predict(base64_encoded):
 
     chars = {class_id: char for char, class_id in class_ids.items()}
 
-    prediction = "_".join([
-        "".join([chars[class_id] for class_id in prediction])
-        for prediction in next(predict_results)["predictions"]
+    predictions = "_".join([
+        "".join([chars[class_id] for class_id in class_ids])
+        for class_ids in next(predict_results)["predictions"]
     ])
 
-    return prediction
+    return predictions
