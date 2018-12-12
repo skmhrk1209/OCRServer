@@ -14,6 +14,7 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "algorithm": "cpp",
-        "cstdint": "cpp"
+        "cstdint": "cpp",
+        "*.ipp": "cpp"
     }
 }

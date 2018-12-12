@@ -1,6 +1,5 @@
 #include <pybind11/embed.h>
 #include <pybind11/pybind11.h>
-#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/regex.hpp>
@@ -9,76 +8,80 @@
 #include <vector>
 
 namespace py = pybind11;
+namespace asio = boost::asio;
 
 class Server {
+    struct Socket {
+        template <typename... Args>
+        Socket(Args&&... args) : socket(std::forward<Args>(args)...) {}
+        asio::ip::tcp::socket socket;
+        std::string send_buffer;
+        std::string receive_buffer;
+    };
+
    private:
     boost::asio::io_context& io_context;
     boost::asio::ip::tcp::acceptor acceptor;
-    std::vector<boost::asio::ip::tcp::socket> sockets;
+    std::vector<Socket> sockets;
+
+    const std::string sos = "<s>";
+    const std::string eos = "</s>";
 
     py::scoped_interpreter interpreter;
     py::module server_app;
 
    public:
-    std::string head;
-    std::string tail;
-
-   public:
-    Server(boost::asio::io_context& io_context_, const boost::asio::ip::tcp::endpoint& endpoint)
-        : io_context(io_context_), acceptor(io_context_, endpoint) {
+    Server(boost::asio::io_context& context, const boost::asio::ip::tcp::endpoint& endpoint) : io_context(context), acceptor(context, endpoint) {
         py::module::import("sys").attr("path").cast<py::list>().append(".");
         server_app = py::module::import("server_app");
     }
 
     void accept() {
-        acceptor.async_accept([this](auto error_code, auto socket) {
+        acceptor.async_accept([this](auto error_code, auto&& socket) {
             if (error_code) {
                 std::cout << "accept failed: " << error_code.message() << std::endl;
             } else {
                 std::cout << "accept succeeded: " << socket.remote_endpoint() << std::endl;
-            }
 
-            sockets.emplace_back(std::move(socket));
-            receive(sockets.back());
+                sockets.emplace_back(std::move(socket));
+                receive(sockets.back());
+            }
 
             accept();
         });
     }
 
-    void send(boost::asio::ip::tcp::socket& socket, const std::string& string) {
-        boost::asio::async_write(socket, boost::asio::buffer("<s>" + string + "</s>"), [this, &socket, string](auto error_code, auto size) {
+    void send(Socket& socket, const std::string& string) {
+        socket.send_buffer = sos + string + eos;
+
+        asio::async_write(socket.socket, asio::buffer(socket.send_buffer), [&](auto error_code, ...) {
             if (error_code) {
                 std::cout << "send failed: " << error_code.message() << std::endl;
+
+                socket.socket.close();
             } else {
-                std::cout << "send succeeded: " << string << std::endl;
+                std::cout << "send succeeded" << std::endl;
 
                 receive(socket);
             }
         });
     }
 
-    void receive(boost::asio::ip::tcp::socket& socket) {
-        boost::asio::async_read_until(
-            socket, boost::asio::dynamic_buffer(tail), boost::regex("<s>.*</s>"), [this, &socket](auto error_code, auto size) {
-                if (error_code) {
-                    std::cout << "receive failed: " << error_code.message() << std::endl;
+    void receive(Socket& socket) {
+        asio::async_read_until(socket.socket, asio::dynamic_buffer(socket.receive_buffer), boost::regex(sos + ".*" + eos), [&](auto error_code, ...) {
+            if (error_code) {
+                std::cout << "receive failed: " << error_code.message() << std::endl;
 
-                    socket.close();
+                socket.socket.close();
+            } else {
+                std::cout << "receive succeeded" << std::endl;
 
-                } else {
-                    std::string start_token = "<s>";
-                    std::string end_token = "</s>";
+                socket.receive_buffer.erase(socket.receive_buffer.begin(), socket.receive_buffer.begin() + sos.size());
+                socket.receive_buffer.erase(socket.receive_buffer.end() - eos.size(), socket.receive_buffer.end());
 
-                    head = std::string(std::search(tail.begin(), tail.end(), start_token.begin(), start_token.end()) + start_token.size(),
-                                       std::search(tail.begin(), tail.end(), end_token.begin(), end_token.end()));
-                    std::cout << "receive succeeded: " << head << std::endl;
-
-                    tail.erase(0, size);
-
-                    std::string predictions = server_app.attr("predict")(head).cast<std::string>();
-                    send(socket, predictions);
-                }
-            });
+                send(socket, server_app.attr("process")(socket.receive_buffer).cast<std::string>());
+            }
+        });
     }
 };
 
