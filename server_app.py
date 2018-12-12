@@ -6,7 +6,7 @@ import base64
 import json
 
 classifier = hub.Module("https://tfhub.dev/google/imagenet/resnet_v2_152/classification/1")
-generator = hub.Module('https://tfhub.dev/deepmind/biggan-512/2')
+generator = hub.Module("https://tfhub.dev/deepmind/biggan-512/2")
 
 
 def classify(image):
