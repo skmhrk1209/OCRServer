@@ -1,1 +1,1 @@
-# OCRServer
+# TensorFlow Hub Server
