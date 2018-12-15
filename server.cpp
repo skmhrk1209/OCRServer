@@ -5,6 +5,7 @@
 #include <boost/regex.hpp>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,24 +28,24 @@ class Server {
     };
 
    private:
-    boost::asio::io_context& io_context;
-    boost::asio::ip::tcp::acceptor acceptor;
+    asio::io_context& io_context;
+    asio::ip::tcp::acceptor acceptor;
     std::vector<Socket::Ptr> sockets;
 
-    const std::string sos = "<s>";
-    const std::string eos = "</s>";
+    const std::string sos;
+    const std::string eos;
 
     py::scoped_interpreter interpreter;
     py::module server_app;
 
    public:
-    Server(boost::asio::io_context& context, const boost::asio::ip::tcp::endpoint& endpoint) : io_context(context), acceptor(context, endpoint) {
+    Server(asio::io_context& context, const asio::ip::tcp::endpoint& endpoint) : io_context(context), acceptor(context, endpoint), sos("<s>"), eos("</s>") {
         py::module::import("sys").attr("path").cast<py::list>().append(".");
         server_app = py::module::import("server_app");
     }
 
     void accept() {
-        acceptor.async_accept([this](auto error_code, auto&& sock) {
+        acceptor.async_accept([=](const auto& error_code, auto&& sock) {
             if (error_code) {
                 std::cout << "accept failed: " << error_code.message() << std::endl;
             } else {
@@ -60,7 +61,7 @@ class Server {
     void send(const Socket::Ptr& socket, const std::string& string) {
         socket->send_buffer = sos + string + eos;
 
-        asio::async_write(socket->socket, asio::buffer(socket->send_buffer), [=](auto error_code, ...) {
+        asio::async_write(socket->socket, asio::buffer(socket->send_buffer), [=](const auto& error_code, ...) {
             if (error_code) {
                 std::cout << "send failed: " << error_code.message() << std::endl;
                 socket->socket.close();
@@ -72,7 +73,7 @@ class Server {
     }
 
     void receive(const Socket::Ptr& socket) {
-        asio::async_read_until(socket->socket, asio::dynamic_buffer(socket->receive_buffer), boost::regex(sos + ".*" + eos), [=](auto error_code, ...) {
+        asio::async_read_until(socket->socket, asio::dynamic_buffer(socket->receive_buffer), boost::regex(sos + ".*" + eos), [=](const auto& error_code, ...) {
             if (error_code) {
                 std::cout << "receive failed: " << error_code.message() << std::endl;
                 socket->socket.close();
@@ -88,8 +89,8 @@ class Server {
 };
 
 int main(int argc, char* argv[]) {
-    boost::asio::io_context io_context;
-    boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), std::atoi(argv[1]));
+    asio::io_context io_context;
+    asio::ip::tcp::endpoint endpoint(asio::ip::tcp::v4(), std::atoi(argv[1]));
     Server server(io_context, endpoint);
 
     server.accept();
