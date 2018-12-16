@@ -79,6 +79,22 @@ class Server {
     }
 
     template <typename BufferStream, typename NextBufferStream, typename Child>
+    void read(BufferStream&& buffer_stream, NextBufferStream&& next_buffer_stream, Child&& child) {
+        asio::async_read_until(
+            buffer_stream->read_stream(), asio::dynamic_buffer(buffer_stream->read_buffer), '\n',
+            [this, buffer_stream = std::forward<BufferStream>(buffer_stream), next_buffer_stream = std::forward<NextBufferStream>(next_buffer_stream),
+             child = std::forward<Child>(child)](const auto& error_code, ...) mutable {
+                if (error_code) {
+                    std::cout << "read failed: " << error_code.message() << std::endl;
+                } else {
+                    std::cout << "read succeeded" << std::endl;
+                    next_buffer_stream->write_buffer = std::move(buffer_stream->read_buffer);
+                    write(std::move(next_buffer_stream), std::move(buffer_stream), std::move(child));
+                }
+            });
+    }
+
+    template <typename BufferStream, typename NextBufferStream, typename Child>
     void write(BufferStream&& buffer_stream, NextBufferStream&& next_buffer_stream, Child&& child) {
         asio::async_write(
             buffer_stream->write_stream(), asio::buffer(buffer_stream->write_buffer),
@@ -89,22 +105,6 @@ class Server {
                 } else {
                     std::cout << "write succeeded" << std::endl;
                     read(std::move(buffer_stream), std::move(next_buffer_stream), std::move(child));
-                }
-            });
-    }
-
-    template <typename BufferStream, typename NextBufferStream, typename Child>
-    void read(BufferStream&& buffer_stream, NextBufferStream&& next_buffer_stream, Child&& child) {
-        asio::async_read_until(
-            buffer_stream->read_stream(), asio::dynamic_buffer(buffer_stream->read_buffer), '\n',
-            [this, buffer_stream = std::forward<BufferStream>(buffer_stream), next_buffer_stream = std::forward<NextBufferStream>(next_buffer_stream),
-             child = std::forward<Child>(child)](const auto& error_code, auto size) mutable {
-                if (error_code) {
-                    std::cout << "read failed: " << error_code.message() << std::endl;
-                } else {
-                    std::cout << "read succeeded" << std::endl;
-                    next_buffer_stream->write_buffer = std::move(buffer_stream->read_buffer);
-                    write(std::move(next_buffer_stream), std::move(buffer_stream), std::move(child));
                 }
             });
     }
