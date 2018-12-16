@@ -1,9 +1,11 @@
+import os
 import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
-import cv2
 import base64
 import json
+import cv2
+import sys
 
 classifier = hub.Module("https://tfhub.dev/google/imagenet/resnet_v2_152/classification/1")
 generator = hub.Module("https://tfhub.dev/deepmind/biggan-512/2")
@@ -57,3 +59,8 @@ def process(json_encoded):
         image = base64.b64encode(image)
 
         return json.dumps(dict(image=image))
+
+
+if __name__ == "__main__":
+
+    print(process(raw_input()))
